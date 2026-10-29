@@ -50,8 +50,35 @@
     inOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2,
     inOutCubic: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
   };
-  // Timeline ms at which the playhead reaches x (inverse of the inOutSine sweep)
-  const timeAt = x => T.sweepStart + Math.acos(1 - 2 * clamp((x - x0) / (x1 - x0))) / Math.PI * (T.sweepEnd - T.sweepStart);
+  const GAP = .15; // seconds between the two notes: quick, light, sprite-like
+
+  // The playhead's path: an eased sweep that dashes across the word, so it reaches
+  // "Hel" and "lo," exactly when each note rings. Built as a smooth monotone curve
+  // through four points, then tabulated per millisecond for fast lookups both ways.
+  let sweepTable = null;
+  function buildSweep() {
+    const D = T.sweepEnd - T.sweepStart;
+    const sineTime = x => Math.acos(1 - 2 * clamp((x - x0) / (x1 - x0))) / Math.PI * D;
+    const t1 = clamp(sineTime(helX), 120, D - GAP * 1000 - 120);
+    const pts = [[0, x0], [t1, helX], [t1 + GAP * 1000, loX], [D, x1]];
+    const n = pts.length, d = [], m = new Array(n).fill(0);
+    for (let i = 0; i < n - 1; i++) d.push((pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0]));
+    for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : 2 / (1 / d[i - 1] + 1 / d[i]);
+    sweepTable = new Float32Array(Math.ceil(D) + 1);
+    for (let t = 0, k = 0; t <= D; t++) {
+      while (k < n - 2 && t > pts[k + 1][0]) k++;
+      const [ta, xa] = pts[k], [tb, xb] = pts[k + 1], h = tb - ta, u = (t - ta) / h;
+      const h00 = 2 * u ** 3 - 3 * u ** 2 + 1, h10 = u ** 3 - 2 * u ** 2 + u, h01 = -2 * u ** 3 + 3 * u ** 2, h11 = u ** 3 - u ** 2;
+      sweepTable[t] = h00 * xa + h10 * h * m[k] + h01 * xb + h11 * h * m[k + 1];
+    }
+  }
+  const headAt = t => sweepTable[clamp(Math.round(t - T.sweepStart), 0, sweepTable.length - 1)];
+  // Timeline ms at which the playhead reaches x
+  function timeAt(x) {
+    let lo = 0, hi = sweepTable.length - 1;
+    while (lo < hi) {const mid = (lo + hi) >> 1; if (sweepTable[mid] < x) lo = mid + 1; else hi = mid;}
+    return T.sweepStart + lo;
+  }
 
   // ---------- sound: a two-note sprite stinger, synthesized ----------
   const LEAD = .45; // seconds of air-swish before the first note
@@ -236,6 +263,7 @@
     const r = range.getBoundingClientRect();
     helX = r.left + r.width * .03;
     loX = r.left + r.width * .5;
+    buildSweep();
     buildBars();
   }
 
@@ -302,8 +330,7 @@
       drawFlat(c - half, c + half, RULE);
       setReveal(-100);
     } else if (t < T.sweepEnd) {
-      const k = ease.inOutSine((t - T.sweepStart) / (T.sweepEnd - T.sweepStart));
-      const head = x0 + (x1 - x0) * k;
+      const head = headAt(t);
       drawBars(head, 1);
       drawFlat(head, x1, RULE);
       playhead.style.opacity = clamp((t - T.sweepStart) / 200);
@@ -333,7 +360,7 @@
 
     start = performance.now() + COLLAPSE;
     const tHel = timeAt(helX);
-    const gap = clamp((timeAt(loX) - tHel) / 1000, .22, .34); // keep the interval musical on any screen
+    const gap = GAP;
     if (ac) {
       const latency = ac.outputLatency || ac.baseLatency || 0;
       buildStinger(ac, out, ac.currentTime + (COLLAPSE + tHel) / 1000 - latency, gap);
