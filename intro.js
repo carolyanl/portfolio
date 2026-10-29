@@ -1,11 +1,13 @@
 'use strict';
 /*
-  Opening intro — "Hello, recorded."
-  1. Gate: a single play button. Clicking it unlocks sound (browsers require a click).
-  2. The button contracts into a dot that draws out into a silent track.
+  Opening intro — "Hi～, recorded."
+  1. Gate: a single triangle play key. Pressing it gives a tactile click sound and
+     unlocks audio (browsers only allow sound after a click).
+  2. The key folds into a dot that draws out into a silent track.
   3. A playhead sweeps the track. Two sprite-like bell notes ring as it crosses
-     "Hel" and "lo,"; the waveform drawn is the real waveform of that stinger,
-     and each note prints its part of the word.
+     "Hi" and the "～"; the waveform drawn is the real waveform of that stinger,
+     each note prints its part of the word, and the tilde (a little sine wave)
+     vibrates like a plucked string while the second note rings.
   4. The sound decays to a flat line that glides up to become the header rule.
   Plays once per browser session. Add ?intro to the URL to replay it.
 */
@@ -17,7 +19,7 @@
   const KEY = 'rol-intro-seen';
   const FPS = 24;
   const T = {lineIn: 650, sweepStart: 650, sweepEnd: 3050, decayEnd: 3550};
-  const COLLAPSE = 300; // button → dot
+  const COLLAPSE = 420; // key → dot
 
   // ---------- DOM ----------
   const el = (tag, cls, html) => {const n = document.createElement(tag); if (cls) n.className = cls; if (html) n.innerHTML = html; return n;};
@@ -25,18 +27,36 @@
   const bg = el('div', 'hello-bg');
   const canvas = el('canvas');
   canvas.setAttribute('aria-hidden', 'true');
-  const word = el('p', 'hello-word', 'Hello<span>,</span>');
+  const word = el('p', 'hello-word', 'Hi<svg class="hello-tilde" viewBox="0 0 100 40" aria-hidden="true"><path/></svg>');
+  word.setAttribute('aria-label', 'Hi～');
+  const tilde = word.querySelector('.hello-tilde'), tildePath = tilde.firstChild;
+  // The "～" as a sine wave; amp scales its height so it can vibrate
+  function drawTilde(amp = 1) {
+    let d = '';
+    for (let i = 0; i <= 40; i++) {
+      const x = 7 + 86 * i / 40, y = 21 - 10.5 * amp * Math.sin(2 * Math.PI * i / 40);
+      d += (i ? ' L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+    }
+    tildePath.setAttribute('d', d);
+  }
+  drawTilde();
   const sub = el('p', 'hello-sub', '<span lang="zh-CN">你好，我是李颜</span>I’m Carol. I make sound for stories.');
   const playhead = el('div', 'hello-playhead');
   const timecode = el('div', 'hello-timecode', '00:00:00:00');
   timecode.setAttribute('aria-hidden', 'true');
-  const play = el('button', 'hello-play', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.8v12.4a.6.6 0 0 0 .92.5l9.5-6.2a.6.6 0 0 0 0-1L9.42 5.3a.6.6 0 0 0-.92.5z"/></svg>');
+  const TRI = 'M26 15 L26 85 L86 50 Z';
+  const play = el('button', 'hello-play',
+    `<svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="hello-tri-fill" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="#a07393"/><stop offset=".45" stop-color="#76486b"/><stop offset="1" stop-color="#5a3250"/></linearGradient></defs>` +
+    `<path class="hello-echo" d="${TRI}"/><g class="hello-key"><path class="hello-tri" d="${TRI}"/></g></svg>`);
   play.type = 'button';
   play.setAttribute('aria-label', 'Play intro with sound / 播放有声开场');
   const skip = el('button', 'hello-skip', 'Skip intro<span lang="zh-CN">跳过</span>');
   skip.type = 'button';
   const line = el('div', 'hello-line');
-  overlay.append(bg, canvas, word, sub, playhead, timecode, play, skip, line);
+  const dot = el('div', 'hello-dot');
+  const bursts = [el('div', 'hello-burst'), el('div', 'hello-burst is-late')];
+  overlay.append(bg, canvas, word, sub, playhead, timecode, ...bursts, dot, play, skip, line);
   document.body.append(overlay);
 
   const ctx = canvas.getContext('2d');
@@ -53,7 +73,7 @@
   const GAP = .15; // seconds between the two notes: quick, light, sprite-like
 
   // The playhead's path: an eased sweep that dashes across the word, so it reaches
-  // "Hel" and "lo," exactly when each note rings. Built as a smooth monotone curve
+  // "Hi" and the "～" exactly when each note rings. Built as a smooth monotone curve
   // through four points, then tabulated per millisecond for fast lookups both ways.
   let sweepTable = null;
   function buildSweep() {
@@ -189,13 +209,36 @@
     noise.connect(bp).connect(ng).connect(bus(-.4));
     noise.start(t0 - LEAD);
 
-    bell(SCORE.first, t0, .6, -.28, 1.7);                     // "hel"
+    bell(SCORE.first, t0, .6, -.28, 1.7);                     // "Hi"
     bell(SCORE.first * 2, t0 + gap - .045, .09, .1, .35);     // grace flick before the answer
-    bell(SCORE.second, t0 + gap, .75, .3, 2.8);               // "lo,"
+    bell(SCORE.second, t0 + gap, .75, .3, 2.8);               // "～"
     // Fairy-dust tail: a few quiet pings drifting down
     let t = t0 + gap + .07;
     SCORE.dust.forEach((f, i) => {t += .045 + rand() * .09; bell(f, t, .05 * (1 - i / 8), rand() * 1.4 - .7, .5);});
     return master;
+  }
+
+  // UI click for pressing the key: a soft felt "tok" with a tiny glass tick on top
+  function clickSound(ac, out) {
+    const t = ac.currentTime + .005;
+    const bus = ac.createGain(); bus.gain.value = .62; bus.connect(out);
+    const blip = (type, f0, f1, level, len, attack = .002) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len * .6);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level, t + attack);
+      g.gain.exponentialRampToValueAtTime(.0001, t + len);
+      o.connect(g).connect(bus); o.start(t); o.stop(t + len + .02);
+    };
+    blip('sine', 520, 300, .32, .07);          // the "tok": wooden body
+    blip('sine', 160, 90, .13, .08, .004);     // a little weight underneath
+    blip('sine', 3950, 3900, .045, .05, .001); // glass tick (B7, from the stinger's family)
+    // Transient: a few milliseconds of filtered noise for the contact
+    const n = Math.floor(ac.sampleRate * .02), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 6);
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 1.1; g.gain.value = .5;
+    src.connect(bp).connect(g).connect(bus); src.start(t);
   }
 
   // Render the stinger offline once so the drawn waveform is the real one
@@ -253,7 +296,7 @@
     word.style.top = top + 'px';
     midY = top + wordH + gap + amp;
     sub.style.top = (midY + amp + gap) + 'px';
-    play.style.top = midY + 'px';
+    for (const n of [play, dot, ...bursts]) n.style.top = midY + 'px';
 
     playhead.style.height = (amp * 2 + 28) + 'px';
     playhead.style.top = (midY - amp - 14) + 'px';
@@ -261,8 +304,8 @@
     const range = document.createRange();
     range.selectNodeContents(word);
     const r = range.getBoundingClientRect();
-    helX = r.left + r.width * .03;
-    loX = r.left + r.width * .5;
+    helX = r.left + r.width * .04;              // first note: "Hi"
+    loX = tilde.getBoundingClientRect().left;   // second note: the "～"
     buildSweep();
     buildBars();
   }
@@ -312,6 +355,13 @@
     return `00:00:${String(Math.floor(f / FPS)).padStart(2, '0')}:${String(f % FPS).padStart(2, '0')}`;
   }
 
+  // The tilde rings like a plucked string while the second note sounds
+  function vibrate(t) {
+    const s = (t - timeAt(loX)) / 1000;
+    if (s < 0) return;
+    drawTilde(1 + .5 * Math.sin(2 * Math.PI * 7 * s) * Math.exp(-3 * s));
+  }
+
   // ---------- timeline ----------
   let state = 'loading', start, raf, startedAt = 0;
 
@@ -336,7 +386,9 @@
       playhead.style.opacity = clamp((t - T.sweepStart) / 200);
       playhead.style.transform = `translateX(${head}px)`;
       setReveal(head);
+      vibrate(t);
     } else if (t < T.decayEnd) {
+      vibrate(t);
       const k = ease.inOutCubic((t - T.sweepEnd) / (T.decayEnd - T.sweepEnd));
       drawBars(x1 + 60, 1 - k);
       playhead.style.opacity = 1 - k;
@@ -354,6 +406,9 @@
     state = 'playing';
     startedAt = performance.now();
     unlockAudio();
+    if (ac) clickSound(ac, out);
+    if (navigator.vibrate) try {navigator.vibrate(8);} catch (e) {}
+    play.classList.remove('is-pressed');
     overlay.classList.remove('is-gate');
     overlay.classList.add('is-playing');
     play.setAttribute('tabindex', '-1');
@@ -440,6 +495,9 @@
     }
   };
   play.addEventListener('click', e => {e.stopPropagation(); begin();});
+  // Tactile press: the key sinks while held, springs as it is released
+  play.addEventListener('pointerdown', () => {if (state === 'gate') play.classList.add('is-pressed');});
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) play.addEventListener(ev, () => play.classList.remove('is-pressed'));
   skip.addEventListener('click', e => {e.stopPropagation(); reveal(true);});
   overlay.addEventListener('click', () => {
     if (state === 'gate') begin();
