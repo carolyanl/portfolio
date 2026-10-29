@@ -60,8 +60,8 @@
   function buildStinger(ac, out, t0, gap) {
     // t0 = first note time, gap = seconds between the two notes
     const rand = seeded(11);
-    const master = ac.createGain(); master.gain.value = .62;
-    const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 6500;
+    const master = ac.createGain(); master.gain.value = .51;
+    const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9500;
     const clean = ac.createBiquadFilter(); clean.type = 'highpass'; clean.frequency.value = 150;
     master.connect(clean).connect(tone).connect(out);
 
@@ -91,7 +91,7 @@
     };
 
     // Rounded FM bell: a soft "ting" over a warm, slightly chorused body
-    function bell(f, t, vel, pan, decay) {
+    function warmBell(f, t, vel, pan, decay) {
       const dest = bus(pan);
       const oscs = [];
       const voice = (type, freq, level, attack, len, to = dest) => {
@@ -120,13 +120,41 @@
       for (const o of oscs) {o.start(t); o.stop(t + decay + .05);}
     }
 
+    // Glassy FM bell (the brighter first version), laid an octave above as the glint
+    function glassBell(f, t, vel, pan, decay) {
+      const dest = bus(pan);
+      const car = ac.createOscillator(), mod = ac.createOscillator(), modGain = ac.createGain(), amp = ac.createGain();
+      car.frequency.value = f; mod.frequency.value = f * 3.0;
+      modGain.gain.setValueAtTime(f * 2.4, t);
+      modGain.gain.exponentialRampToValueAtTime(f * .08, t + .28);
+      mod.connect(modGain).connect(car.frequency);
+      amp.gain.setValueAtTime(0, t);
+      amp.gain.linearRampToValueAtTime(vel, t + .006);
+      amp.gain.exponentialRampToValueAtTime(vel * .35, t + .12);
+      amp.gain.exponentialRampToValueAtTime(.0001, t + decay);
+      car.connect(amp).connect(dest);
+      const sp = ac.createOscillator(), sg = ac.createGain();
+      sp.frequency.value = f * 4.2;
+      sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(vel * .18, t + .003);
+      sg.gain.exponentialRampToValueAtTime(.0001, t + .22);
+      sp.connect(sg).connect(dest);
+      for (const o of [car, mod, sp]) {o.start(t); o.stop(t + decay + .05);}
+    }
+
+    // One note = the warm bell as the bed, with the glass bell an octave up mixed lower on top
+    const GLASS = .42;
+    function bell(f, t, vel, pan, decay) {
+      warmBell(f, t, vel, pan, decay);
+      glassBell(f * 2, t, vel * GLASS, pan, decay * .85);
+    }
+
     // Air swish rising into the first note — the sprite arriving
     const nlen = Math.floor(ac.sampleRate * LEAD);
     const nb = ac.createBuffer(1, nlen, ac.sampleRate), nd = nb.getChannelData(0);
     for (let i = 0; i < nlen; i++) nd[i] = rand() * 2 - 1;
     const noise = ac.createBufferSource(); noise.buffer = nb;
     const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2;
-    bp.frequency.setValueAtTime(900, t0 - LEAD); bp.frequency.exponentialRampToValueAtTime(5000, t0);
+    bp.frequency.setValueAtTime(900, t0 - LEAD); bp.frequency.exponentialRampToValueAtTime(7000, t0);
     const ng = ac.createGain();
     ng.gain.setValueAtTime(0, t0 - LEAD); ng.gain.linearRampToValueAtTime(.04, t0 - .06); ng.gain.linearRampToValueAtTime(0, t0 + .02);
     noise.connect(bp).connect(ng).connect(bus(-.4));
