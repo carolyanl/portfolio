@@ -1,9 +1,12 @@
 'use strict';
 /*
   Opening intro — "Hello, recorded."
-  A playhead sweeps a silent track and records the waveform of a spoken "hel-lo".
-  Each syllable prints the word above it; the sound decays back to a flat line,
-  and that line glides up to become the hairline under the header.
+  1. Gate: a single play button. Clicking it unlocks sound (browsers require a click).
+  2. The button contracts into a dot that draws out into a silent track.
+  3. A playhead sweeps the track. Two sprite-like bell notes ring as it crosses
+     "Hel" and "lo,"; the waveform drawn is the real waveform of that stinger,
+     and each note prints its part of the word.
+  4. The sound decays to a flat line that glides up to become the header rule.
   Plays once per browser session. Add ?intro to the URL to replay it.
 */
 (() => {
@@ -13,12 +16,12 @@
 
   const KEY = 'rol-intro-seen';
   const FPS = 24;
-  // Timeline (ms)
-  const T = {lineIn: 650, sweepStart: 650, sweepEnd: 3050, decayEnd: 3550, revealEnd: 4500};
+  const T = {lineIn: 650, sweepStart: 650, sweepEnd: 3050, decayEnd: 3550};
+  const COLLAPSE = 300; // button → dot
 
+  // ---------- DOM ----------
   const el = (tag, cls, html) => {const n = document.createElement(tag); if (cls) n.className = cls; if (html) n.innerHTML = html; return n;};
-  const overlay = el('div', 'hello');
-  overlay.setAttribute('aria-label', 'Hello — 你好，我是李颜');
+  const overlay = el('div', 'hello is-gate');
   const bg = el('div', 'hello-bg');
   const canvas = el('canvas');
   canvas.setAttribute('aria-hidden', 'true');
@@ -27,10 +30,13 @@
   const playhead = el('div', 'hello-playhead');
   const timecode = el('div', 'hello-timecode', '00:00:00:00');
   timecode.setAttribute('aria-hidden', 'true');
+  const play = el('button', 'hello-play', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.8v12.4a.6.6 0 0 0 .92.5l9.5-6.2a.6.6 0 0 0 0-1L9.42 5.3a.6.6 0 0 0-.92.5z"/></svg>');
+  play.type = 'button';
+  play.setAttribute('aria-label', 'Play intro with sound / 播放有声开场');
   const skip = el('button', 'hello-skip', 'Skip intro<span lang="zh-CN">跳过</span>');
   skip.type = 'button';
   const line = el('div', 'hello-line');
-  overlay.append(bg, canvas, word, sub, playhead, timecode, skip, line);
+  overlay.append(bg, canvas, word, sub, playhead, timecode, play, skip, line);
   document.body.append(overlay);
 
   const ctx = canvas.getContext('2d');
@@ -38,22 +44,137 @@
   const ACCENT = css.getPropertyValue('--accent').trim() || '#6f4263';
   const RULE = css.getPropertyValue('--line').trim() || '#d9d1d9';
 
-  // ---------- layout ----------
-  let W, H, dpr, x0, x1, midY, amp, bars = [], barStep;
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const ease = {
     outCubic: t => 1 - Math.pow(1 - t, 3),
     inOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2,
     inOutCubic: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
   };
-  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  // Timeline ms at which the playhead reaches x (inverse of the inOutSine sweep)
+  const timeAt = x => T.sweepStart + Math.acos(1 - 2 * clamp((x - x0) / (x1 - x0))) / Math.PI * (T.sweepEnd - T.sweepStart);
 
-  // A syllable: quick attack, longer natural decay
-  function syllable(x, start, end, peak, tail = 1.8) {
-    const u = (x - start) / (end - start);
-    if (u < 0 || u > tail) return 0;
-    const a = .14;
-    return peak * (u < a ? Math.pow(u / a, 1.4) : Math.exp(-(u - a) * 2.4));
+  // ---------- sound: a two-note sprite stinger, synthesized ----------
+  const LEAD = .45; // seconds of air-swish before the first note
+  function seeded(s) {return () => (s = (s * 16807) % 2147483647) / 2147483647;}
+
+  function buildStinger(ac, out, t0, gap) {
+    // t0 = first note time, gap = seconds between the two notes
+    const rand = seeded(11);
+    const master = ac.createGain(); master.gain.value = .55;
+    const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9500;
+    master.connect(tone).connect(out);
+
+    // Small airy room
+    const len = Math.floor(ac.sampleRate * 2.6);
+    const ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c); let prev = 0;
+      for (let i = 0; i < len; i++) {const n = rand() * 2 - 1; d[i] = (n - prev * .6) * Math.pow(1 - i / len, 3.2); prev = n;}
+    }
+    const verb = ac.createConvolver(); verb.buffer = ir;
+    const wet = ac.createGain(); wet.gain.value = .32;
+    verb.connect(wet).connect(master);
+
+    // Stereo ping-pong echo for a little flutter
+    const dl = ac.createDelay(1), dr = ac.createDelay(1), fb = ac.createGain(), echo = ac.createGain();
+    dl.delayTime.value = .17; dr.delayTime.value = .17; fb.gain.value = .32; echo.gain.value = .16;
+    const merger = ac.createChannelMerger(2), damp = ac.createBiquadFilter();
+    damp.type = 'lowpass'; damp.frequency.value = 5200;
+    echo.connect(dl); dl.connect(damp).connect(dr); dr.connect(fb).connect(dl);
+    dl.connect(merger, 0, 0); dr.connect(merger, 0, 1); merger.connect(master); merger.connect(verb);
+
+    const bus = (pan) => {
+      const p = ac.createStereoPanner(); p.pan.value = pan;
+      p.connect(master); p.connect(verb); p.connect(echo);
+      return p;
+    };
+
+    // Glassy FM bell: bright "ting" that mellows as the modulation index falls
+    function bell(f, t, vel, pan, decay) {
+      const dest = bus(pan);
+      const car = ac.createOscillator(), mod = ac.createOscillator(), modGain = ac.createGain(), amp = ac.createGain();
+      car.frequency.value = f; mod.frequency.value = f * 3.0;
+      modGain.gain.setValueAtTime(f * 2.4, t);
+      modGain.gain.exponentialRampToValueAtTime(f * .08, t + .28);
+      mod.connect(modGain).connect(car.frequency);
+      amp.gain.setValueAtTime(0, t);
+      amp.gain.linearRampToValueAtTime(vel, t + .006);
+      amp.gain.exponentialRampToValueAtTime(vel * .35, t + .12);
+      amp.gain.exponentialRampToValueAtTime(.0001, t + decay);
+      car.connect(amp).connect(dest);
+      // Inharmonic sparkle partial, very short
+      const sp = ac.createOscillator(), sg = ac.createGain();
+      sp.frequency.value = f * 4.2;
+      sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(vel * .18, t + .003);
+      sg.gain.exponentialRampToValueAtTime(.0001, t + .22);
+      sp.connect(sg).connect(dest);
+      // Soft fundamental body an octave down for warmth
+      const bo = ac.createOscillator(), bgn = ac.createGain();
+      bo.type = 'triangle'; bo.frequency.value = f / 2;
+      bgn.gain.setValueAtTime(0, t); bgn.gain.linearRampToValueAtTime(vel * .12, t + .01);
+      bgn.gain.exponentialRampToValueAtTime(.0001, t + decay * .6);
+      bo.connect(bgn).connect(dest);
+      for (const o of [car, mod, sp, bo]) {o.start(t); o.stop(t + decay + .05);}
+    }
+
+    // Air swish rising into the first note — the sprite arriving
+    const nlen = Math.floor(ac.sampleRate * LEAD);
+    const nb = ac.createBuffer(1, nlen, ac.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < nlen; i++) nd[i] = rand() * 2 - 1;
+    const noise = ac.createBufferSource(); noise.buffer = nb;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2;
+    bp.frequency.setValueAtTime(1800, t0 - LEAD); bp.frequency.exponentialRampToValueAtTime(9000, t0);
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0, t0 - LEAD); ng.gain.linearRampToValueAtTime(.05, t0 - .06); ng.gain.linearRampToValueAtTime(0, t0 + .02);
+    noise.connect(bp).connect(ng).connect(bus(-.4));
+    noise.start(t0 - LEAD);
+
+    const E6 = 1318.51, B6 = 1975.53;
+    bell(E6, t0, .55, -.28, 1.5);                 // "hel"
+    bell(E6 * 2, t0 + gap - .045, .1, .1, .35);   // grace flick before the answer
+    bell(B6, t0 + gap, .7, .3, 2.6);              // "lo,"
+    // Fairy-dust tail: a few quiet pings drifting down
+    const dust = [4434.92, 3951.07, 3322.44, 2959.96, 2637.02, 3951.07]; // E-major pentatonic, falling
+    let t = t0 + gap + .07;
+    dust.forEach((f, i) => {t += .045 + rand() * .09; bell(f, t, .05 * (1 - i / 8), rand() * 1.4 - .7, .5);});
+    return master;
   }
+
+  // Render the stinger offline once so the drawn waveform is the real one
+  let envelope = null; // {rms: Float32Array, rate}
+  function renderEnvelope(gap) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) return Promise.resolve(null);
+    const rate = 22050, dur = LEAD + gap + 2.8;
+    const oac = new OAC(2, Math.ceil(rate * dur), rate);
+    buildStinger(oac, oac.destination, LEAD, gap);
+    return oac.startRendering().then(buf => {
+      const L = buf.getChannelData(0), R = buf.getChannelData(1);
+      const win = Math.floor(rate * .012), n = Math.floor(L.length / win);
+      const rms = new Float32Array(n); let max = 0;
+      for (let i = 0; i < n; i++) {
+        let s = 0;
+        for (let j = i * win; j < (i + 1) * win; j++) {const m = (L[j] + R[j]) * .5; s += m * m;}
+        rms[i] = Math.sqrt(s / win); max = Math.max(max, rms[i]);
+      }
+      for (let i = 0; i < n; i++) rms[i] /= max || 1;
+      return {rms, step: win / rate};
+    }).catch(() => null);
+  }
+
+  let ac = null, out = null;
+  function unlockAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      ac = new AC();
+      out = ac.createGain(); out.connect(ac.destination);
+      ac.resume();
+    } catch (e) {ac = null;}
+  }
+
+  // ---------- layout ----------
+  let W, H, dpr, x0, x1, midY, amp, bars = [], barStep, helX, loX;
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -66,7 +187,6 @@
     x1 = W - x0;
     amp = clamp(H * .085, 26, 78);
 
-    // Stack: word / waveform / subline, centred as a group
     const wordH = word.getBoundingClientRect().height;
     const subH = sub.getBoundingClientRect().height;
     const gap = mobile ? 18 : 26;
@@ -75,40 +195,43 @@
     word.style.top = top + 'px';
     midY = top + wordH + gap + amp;
     sub.style.top = (midY + amp + gap) + 'px';
+    play.style.top = midY + 'px';
 
     playhead.style.height = (amp * 2 + 28) + 'px';
     playhead.style.top = (midY - amp - 14) + 'px';
 
-    // Align the "hel" and "lo," bursts under the printed word
     const range = document.createRange();
     range.selectNodeContents(word);
     const r = range.getBoundingClientRect();
-    const wl = r.left, ww = r.width;
+    helX = r.left + r.width * .03;
+    loX = r.left + r.width * .5;
+    buildBars();
+  }
 
-    barStep = mobile ? 3 : 3.5;
+  function buildBars() {
+    barStep = W < 700 ? 3 : 3.5;
     bars = [];
-    let seed = 7;
-    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const rand = seeded(7);
+    const tHel = timeAt(helX);
     for (let x = x0, i = 0; x <= x1; x += barStep, i++) {
-      const room = .035 + rand() * .03;
-      const voice =
-        syllable(x, wl - ww * .06, wl + ww * .02, .25, 1.2) +   // breath in
-        syllable(x, wl + ww * .02, wl + ww * .44, 1) +            // "hel"
-        syllable(x, wl + ww * .48, wl + ww * .98, .86, 2.1);      // "lo,"
-      const texture = (.45 + .55 * rand()) * (.78 + .22 * Math.sin(i * .83) * Math.sin(i * .21));
-      bars.push({x, a: Math.min(1, Math.max(room, voice * texture * 1.45))});
+      const room = .03 + rand() * .03;
+      let a = 0;
+      if (envelope) {
+        const sec = LEAD + (timeAt(x) - tHel) / 1000;
+        const k = Math.floor(sec / envelope.step);
+        a = k >= 0 && k < envelope.rms.length ? Math.pow(envelope.rms[k], .62) : 0;
+      }
+      const texture = .62 + .38 * rand();
+      bars.push({x, a: Math.min(1, Math.max(room, a * texture))});
     }
   }
 
   // ---------- drawing ----------
-  function drawFlat(fromX, toX, color, alpha = 1) {
+  function drawFlat(fromX, toX, color) {
     if (toX <= fromX) return;
-    ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
     ctx.fillRect(fromX, midY - .5, toX - fromX, 1);
-    ctx.globalAlpha = 1;
   }
-
   function drawBars(head, scale) {
     ctx.fillStyle = ACCENT;
     const bw = barStep * .55;
@@ -121,33 +244,30 @@
     }
     ctx.globalAlpha = 1;
   }
-
   function setReveal(x) {
     const v = x + 36 + 'px';
     for (const n of [word, sub]) n.style.setProperty('--reveal', v);
   }
-
   function tc(ms) {
     const f = Math.floor(ms / (1000 / FPS));
-    const s = Math.floor(f / FPS), fr = f % FPS;
-    return `00:00:${String(s).padStart(2, '0')}:${String(fr).padStart(2, '0')}`;
+    return `00:00:${String(Math.floor(f / FPS)).padStart(2, '0')}:${String(f % FPS).padStart(2, '0')}`;
   }
 
   // ---------- timeline ----------
-  let start, raf, finishing = false;
+  let state = 'loading', start, raf, startedAt = 0;
+
   function frame(now) {
-    if (start === undefined) start = now;
     const t = now - start;
     ctx.clearRect(0, 0, W, H);
+    if (t < 0) {raf = requestAnimationFrame(frame); return;}
 
     const fadeIn = clamp(t / 500);
     timecode.style.opacity = skip.style.opacity = (fadeIn * (1 - clamp((t - T.decayEnd) / 300))).toFixed(3);
     if (t < T.decayEnd) timecode.textContent = tc(Math.min(t, T.sweepEnd));
 
     if (t < T.lineIn) {
-      // Silence: the track line draws outward from the centre
       const k = ease.outCubic(t / T.lineIn);
-      const c = (x0 + x1) / 2, half = (x1 - x0) / 2 * k;
+      const c = W / 2, half = (x1 - x0) / 2 * k;
       drawFlat(c - half, c + half, RULE);
       setReveal(-100);
     } else if (t < T.sweepEnd) {
@@ -159,48 +279,86 @@
       playhead.style.transform = `translateX(${head}px)`;
       setReveal(head);
     } else if (t < T.decayEnd) {
-      // The take ends: sound decays back to the room
       const k = ease.inOutCubic((t - T.sweepEnd) / (T.decayEnd - T.sweepEnd));
       drawBars(x1 + 60, 1 - k);
       playhead.style.opacity = 1 - k;
       playhead.style.transform = `translateX(${x1}px)`;
       setReveal(W + 100);
-    } else if (!finishing) {
+    } else {
       reveal(false);
       return;
     }
     raf = requestAnimationFrame(frame);
   }
 
+  function begin() {
+    if (state !== 'gate') return;
+    state = 'playing';
+    startedAt = performance.now();
+    unlockAudio();
+    overlay.classList.remove('is-gate');
+    overlay.classList.add('is-playing');
+    play.setAttribute('tabindex', '-1');
+
+    start = performance.now() + COLLAPSE;
+    const tHel = timeAt(helX);
+    const gap = clamp((timeAt(loX) - tHel) / 1000, .22, .34); // keep the interval musical on any screen
+    if (ac) {
+      const latency = ac.outputLatency || ac.baseLatency || 0;
+      buildStinger(ac, out, ac.currentTime + (COLLAPSE + tHel) / 1000 - latency, gap);
+    }
+    renderEnvelope(gap).then(env => {
+      envelope = env;
+      if (!env) envelope = fallbackEnvelope(gap);
+      buildBars();
+    });
+    raf = requestAnimationFrame(frame);
+  }
+
+  // Without Web Audio, draw the same two-bell shape synthetically
+  function fallbackEnvelope(gap) {
+    const step = .012, n = Math.ceil((LEAD + gap + 2.8) / step), rms = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const s = i * step - LEAD;
+      const b1 = s >= 0 ? .75 * Math.exp(-s * 3.2) : .12 * Math.max(0, 1 + s / LEAD);
+      const s2 = s - gap, b2 = s2 >= 0 ? Math.exp(-s2 * 2.2) : 0;
+      rms[i] = Math.min(1, b1 + b2);
+    }
+    return {rms, step};
+  }
+
   function reveal(fast) {
-    if (finishing) return;
-    finishing = true;
+    if (state === 'finishing') return;
+    const wasGate = state === 'gate' || state === 'loading';
+    state = 'finishing';
     cancelAnimationFrame(raf);
     ctx.clearRect(0, 0, W, H);
     playhead.style.opacity = 0;
     timecode.style.opacity = skip.style.opacity = 0;
-
-    // Hand the flat line over to a DOM element and glide it onto the header rule
-    const header = document.querySelector('header.shell');
-    const hr = header ? header.getBoundingClientRect() : {left: x0, width: x1 - x0, bottom: 1};
-    Object.assign(line.style, {display: 'block', left: x0 + 'px', top: (midY - .5) + 'px', width: (x1 - x0) + 'px'});
-    const dur = fast ? 600 : 950;
-    const dy = (hr.bottom - 1) - (midY - .5);
-    const sx = hr.width / (x1 - x0);
-    const dx = hr.left - x0;
-    const curve = 'cubic-bezier(.65,0,.25,1)';
-
-    line.animate([
-      {transform: 'none', background: ACCENT},
-      {transform: `translate(${dx}px,${dy}px) scaleX(${sx})`, background: RULE}
-    ], {duration: dur, easing: curve, fill: 'forwards'});
-    for (const [n, d] of [[word, 0], [sub, 40]]) {
-      n.animate([{opacity: 1, transform: 'none', filter: 'blur(0)'},
-                 {opacity: 0, transform: 'translateY(-26px)', filter: 'blur(6px)'}],
-                {duration: dur * .5, delay: d, easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'forwards'});
+    if (fast && ac && out) {
+      out.gain.setTargetAtTime(0, ac.currentTime, .08);
     }
 
-    // Uncover the page beneath while the line travels
+    const header = document.querySelector('header.shell');
+    const hr = header ? header.getBoundingClientRect() : {left: x0, width: x1 - x0, bottom: 1};
+    const dur = fast ? 600 : 950;
+    const curve = 'cubic-bezier(.65,0,.25,1)';
+
+    if (wasGate) {
+      play.animate([{opacity: 1}, {opacity: 0, transform: 'translate(-50%,-50%) scale(.8)'}], {duration: 300, fill: 'forwards'});
+    } else {
+      Object.assign(line.style, {display: 'block', left: x0 + 'px', top: (midY - .5) + 'px', width: (x1 - x0) + 'px'});
+      line.animate([
+        {transform: 'none', background: ACCENT},
+        {transform: `translate(${hr.left - x0}px,${(hr.bottom - 1) - (midY - .5)}px) scaleX(${hr.width / (x1 - x0)})`, background: RULE}
+      ], {duration: dur, easing: curve, fill: 'forwards'});
+      for (const [n, d] of [[word, 0], [sub, 40]]) {
+        n.animate([{opacity: 1, transform: 'none', filter: 'blur(0)'},
+                   {opacity: 0, transform: 'translateY(-26px)', filter: 'blur(6px)'}],
+                  {duration: dur * .5, delay: d, easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'forwards'});
+      }
+    }
+
     root.classList.remove('has-intro');
     root.classList.add('hello-done');
     bg.animate([{opacity: 1}, {opacity: 0}], {duration: dur * .8, delay: dur * .4, easing: 'ease-in-out', fill: 'forwards'})
@@ -212,18 +370,31 @@
     removeEventListener('resize', layout);
     removeEventListener('keydown', onKey);
     try {sessionStorage.setItem(KEY, '1');} catch (e) {}
+    // Let the bell tail ring out, then release the audio device
+    if (ac) setTimeout(() => ac.close().catch(() => {}), 3500);
   }
 
-  const onKey = e => {if (['Escape', 'Enter', ' '].includes(e.key)) {e.preventDefault(); reveal(true);}};
+  const onKey = e => {
+    if (e.key === 'Escape') {e.preventDefault(); reveal(true); return;}
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (state === 'gate') {e.preventDefault(); begin();}
+      else if (state === 'playing' && e.target !== skip) {e.preventDefault(); reveal(true);}
+    }
+  };
+  play.addEventListener('click', e => {e.stopPropagation(); begin();});
   skip.addEventListener('click', e => {e.stopPropagation(); reveal(true);});
-  overlay.addEventListener('click', () => reveal(true));
+  overlay.addEventListener('click', () => {
+    if (state === 'gate') begin();
+    else if (state === 'playing' && performance.now() - startedAt > 600) reveal(true);
+  });
   addEventListener('keydown', onKey);
   addEventListener('resize', layout);
 
-  // Wait briefly for the italic display face so the bursts line up with real letterforms
+  // Wait briefly for the italic display face so the notes line up with real letterforms
   const fontReady = document.fonts ? document.fonts.load('italic 400 100px "Cormorant Garamond"') : Promise.resolve();
   Promise.race([fontReady, new Promise(r => setTimeout(r, 700))]).then(() => {
     layout();
-    raf = requestAnimationFrame(frame);
+    state = 'gate';
+    overlay.classList.add('is-ready');
   });
 })();
