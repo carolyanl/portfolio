@@ -1,0 +1,39 @@
+/* Opening intro: a recorded "hello" that prints the greeting, then settles into the header rule. */
+html.has-intro{overflow:hidden}
+html.has-intro body>*:not(.hello){visibility:hidden}
+
+.hello{position:fixed;inset:0;z-index:100;color:var(--ink);cursor:default}
+.hello-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,#f3eef4 0,transparent 62%),var(--paper)}
+.hello canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+.hello-word,.hello-sub{position:absolute;left:0;right:0;margin:0;text-align:center;
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(var(--reveal,0px) - 36px),transparent var(--reveal,0px));
+          mask-image:linear-gradient(90deg,#000 calc(var(--reveal,0px) - 36px),transparent var(--reveal,0px))}
+.hello-word{font:italic 400 clamp(84px,14vw,200px)/1 var(--serif);letter-spacing:-.035em}
+.hello-word span{color:var(--accent)}
+.hello-sub{font-size:15px;line-height:1.6;color:var(--muted);letter-spacing:.02em}
+.hello-sub [lang="zh-CN"]{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;color:var(--ink);margin-right:14px;letter-spacing:.12em}
+
+.hello-playhead{position:absolute;top:0;left:0;width:1px;background:var(--accent);opacity:0;will-change:transform}
+.hello-playhead:before{content:'';position:absolute;top:-7px;left:-4px;border:4.5px solid transparent;border-top:7px solid var(--accent)}
+
+.hello-timecode{position:absolute;top:34px;right:56px;font:13px/1 Arial,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.08em;color:var(--muted);opacity:0}
+.hello-skip{position:absolute;right:48px;bottom:32px;border:0;background:none;padding:10px 8px;min-height:44px;font-size:13px;color:var(--muted);opacity:0}
+.hello-skip:hover{color:var(--accent)}
+.hello-skip span{font-family:"PingFang SC","Microsoft YaHei",sans-serif;margin-left:8px;font-size:12px}
+
+.hello-line{position:absolute;height:1px;background:var(--accent);transform-origin:0 0;display:none}
+
+/* The hero settles in as the intro lifts */
+@keyframes intro-hero-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+html.hello-done .hero h1{animation:intro-hero-in 1s cubic-bezier(.2,.7,.2,1) .4s both}
+html.hello-done .hero .intro,html.hello-done .hero .intro-zh{animation:intro-hero-in 1s cubic-bezier(.2,.7,.2,1) .55s both}
+html.hello-done .poster-gallery{animation:intro-hero-in 1.1s cubic-bezier(.2,.7,.2,1) .7s both}
+
+@media(max-width:700px){
+  .hello-timecode{top:24px;right:20px;font-size:12px}
+  .hello-skip{right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  .hello-sub{font-size:13px;padding:0 20px}
+  .hello-sub [lang="zh-CN"]{display:block;margin:0 0 4px}
+}
+@media(prefers-reduced-motion:reduce){html.has-intro body>*:not(.hello){visibility:visible}.hello{display:none}}
