@@ -82,14 +82,14 @@
 
   // ---------- sound: a two-note sprite stinger, synthesized ----------
   // The two notes (Hz) and the sparkle tail that answers them
-  const SCORE = {first: 659.26, second: 987.77, dust: [2217.46, 1975.53, 1661.22, 1479.98, 1318.51, 1975.53]}; // E5 → B5, E-major pentatonic
+  const SCORE = {first: 1318.51, second: 1975.53, dust: [4434.92, 3951.07, 3322.44, 2959.96, 2637.02, 3951.07]}; // E6 → B6, E-major pentatonic
   const LEAD = .45; // seconds of air-swish before the first note
   function seeded(s) {return () => (s = (s * 16807) % 2147483647) / 2147483647;}
 
   function buildStinger(ac, out, t0, gap) {
     // t0 = first note time, gap = seconds between the two notes
     const rand = seeded(11);
-    const master = ac.createGain(); master.gain.value = .51;
+    const master = ac.createGain(); master.gain.value = .45;
     const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9500;
     const clean = ac.createBiquadFilter(); clean.type = 'highpass'; clean.frequency.value = 150;
     master.connect(clean).connect(tone).connect(out);
