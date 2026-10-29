@@ -218,27 +218,91 @@
     return master;
   }
 
-  // UI click for pressing the key: a soft felt "tok" with a tiny glass tick on top
-  function clickSound(ac, out) {
-    const t = ac.currentTime + .005;
-    const bus = ac.createGain(); bus.gain.value = .62; bus.connect(out);
-    const blip = (type, f0, f1, level, len, attack = .002) => {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len * .6);
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level, t + attack);
-      g.gain.exponentialRampToValueAtTime(.0001, t + len);
-      o.connect(g).connect(bus); o.start(t); o.stop(t + len + .02);
-    };
-    blip('sine', 520, 300, .32, .07);          // the "tok": wooden body
-    blip('sine', 160, 90, .13, .08, .004);     // a little weight underneath
-    blip('sine', 3950, 3900, .045, .05, .001); // glass tick (B7, from the stinger's family)
-    // Transient: a few milliseconds of filtered noise for the contact
-    const n = Math.floor(ac.sampleRate * .02), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 6);
-    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
-    src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 1.1; g.gain.value = .5;
-    src.connect(bp).connect(g).connect(bus); src.start(t);
+  // ---------- UI sounds for the key, timed to its animation ----------
+  // Shared helpers: a noise buffer, and a short bright room for the blooms.
+  function noiseBuffer(ac, sec) {
+    const n = Math.floor(ac.sampleRate * sec), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+    const rand = seeded(29);
+    for (let i = 0; i < n; i++) d[i] = rand() * 2 - 1;
+    return buf;
+  }
+  function uiBus(ac, out, level) {
+    const bus = ac.createGain(); bus.gain.value = level; bus.connect(out);
+    const len = Math.floor(ac.sampleRate * 1.1), ir = ac.createBuffer(2, len, ac.sampleRate), rand = seeded(5);
+    for (let c = 0; c < 2; c++) {const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (rand() * 2 - 1) * Math.pow(1 - i / len, 4);}
+    const verb = ac.createConvolver(), wet = ac.createGain();
+    verb.buffer = ir; wet.gain.value = .5; verb.connect(wet).connect(bus);
+    return {bus, verb};
+  }
+  // A pitched blip: sine sweeping f0 → f1 with a fast attack and exponential decay
+  function blip(ac, dest, t, f0, f1, level, len, attack = .002, pan = 0) {
+    const o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner();
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len * .6);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level, t + attack);
+    g.gain.exponentialRampToValueAtTime(.0001, t + len);
+    p.pan.value = pan;
+    o.connect(g).connect(p); for (const d of [].concat(dest)) p.connect(d);
+    o.start(t); o.stop(t + len + .02);
+  }
+  // Filtered noise with its own envelope; returns the nodes so callers can automate them
+  function hiss(ac, dest, t, len, {type = 'bandpass', f0, f1, q = 1, level, attack = .01, pan = 0}) {
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), p = ac.createStereoPanner();
+    src.buffer = noiseBuffer(ac, len + .05);
+    f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + len);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level, t + attack);
+    g.gain.exponentialRampToValueAtTime(.0001, t + len);
+    p.pan.value = pan;
+    src.connect(f).connect(g).connect(p); for (const d of [].concat(dest)) p.connect(d);
+    src.start(t); src.stop(t + len + .05);
+    return {g, p};
+  }
+
+  // Held down: a soft, muffled press as the key sinks
+  function pressSound(ac, out) {
+    const t = ac.currentTime + .003, {bus} = uiBus(ac, out, 1);
+    hiss(ac, bus, t, .03, {f0: 1400, f1: 700, q: .8, level: .22, attack: .001});
+    blip(ac, bus, t, 260, 170, .16, .06, .003);
+  }
+
+  // Released: every beat of the animation gets its sound.
+  // Times match the CSS: rings at 40 and 130 ms, the key spins down over 400 ms,
+  // the dot pops at about 420 ms, and the track draws out from 420 ms for 650 ms.
+  function releaseSound(ac, out) {
+    const t = ac.currentTime + .005, {bus, verb} = uiBus(ac, out, 1.15);
+
+    // 1. The click: contact transient, wooden tok, a little weight, a glass tick (B7)
+    hiss(ac, bus, t, .02, {f0: 2600, f1: 2400, q: 1.1, level: .5, attack: .0005});
+    blip(ac, bus, t, 520, 300, .32, .07);
+    blip(ac, bus, t, 160, 90, .12, .08, .004);
+    blip(ac, [bus, verb], t, 3950, 3900, .05, .06, .001);
+
+    // 2. The spin: a whirring swish that falls as the key shrinks and circles the stereo field
+    const spin = hiss(ac, [bus, verb], t + .01, .42, {f0: 5200, f1: 1100, q: 2.6, level: .14, attack: .05});
+    const whir = ac.createOscillator(), whirDepth = ac.createGain();
+    whir.frequency.setValueAtTime(12, t); whir.frequency.exponentialRampToValueAtTime(36, t + .4);
+    whirDepth.gain.value = .06; whir.connect(whirDepth).connect(spin.g.gain);
+    const orbit = ac.createOscillator(), orbitDepth = ac.createGain();
+    orbit.frequency.setValueAtTime(5, t); orbit.frequency.exponentialRampToValueAtTime(14, t + .4);
+    orbitDepth.gain.value = .45; orbit.connect(orbitDepth).connect(spin.p.pan);
+    for (const o of [whir, orbit]) {o.start(t); o.stop(t + .45);}
+
+    // 3. The rings: two airy blooms swelling into the room, the second softer
+    for (const [d, lv] of [[.04, 1], [.13, .6]]) {
+      hiss(ac, [bus, verb], t + d, .55, {type: 'lowpass', f0: 380, f1: 3200, q: .7, level: .07 * lv, attack: .06});
+      blip(ac, verb, t + d, 1975.53, 1975.53, .02 * lv, .5, .03); // a faint B6 shimmer inside the bloom
+    }
+    blip(ac, bus, t + .04, 130, 65, .1, .3, .01); // body under the first ring
+
+    // 4. The dot: a droplet "plip"
+    blip(ac, [bus, verb], t + .42, 720, 1700, .16, .09, .002);
+    blip(ac, verb, t + .425, 3300, 3300, .03, .05, .001);
+
+    // 5. The track: a fine swish widening from the centre out to both ears with the line
+    for (const side of [-1, 1]) {
+      const z = hiss(ac, [bus, verb], t + .43, .66, {type: 'bandpass', f0: 2400, f1: 7000, q: 1.4, level: .12, attack: .025});
+      z.p.pan.setValueAtTime(0, t + .43); z.p.pan.linearRampToValueAtTime(side * .9, t + .9);
+    }
   }
 
   // Render the stinger offline once so the drawn waveform is the real one
@@ -268,9 +332,8 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     try {
-      ac = new AC();
-      out = ac.createGain(); out.connect(ac.destination);
-      ac.resume();
+      if (!ac) {ac = new AC(); out = ac.createGain(); out.connect(ac.destination);}
+      if (ac.state !== 'running') ac.resume();
     } catch (e) {ac = null;}
   }
 
@@ -406,7 +469,7 @@
     state = 'playing';
     startedAt = performance.now();
     unlockAudio();
-    if (ac) clickSound(ac, out);
+    if (ac) releaseSound(ac, out);
     if (navigator.vibrate) try {navigator.vibrate(8);} catch (e) {}
     play.classList.remove('is-pressed');
     overlay.classList.remove('is-gate');
@@ -496,7 +559,13 @@
   };
   play.addEventListener('click', e => {e.stopPropagation(); begin();});
   // Tactile press: the key sinks while held, springs as it is released
-  play.addEventListener('pointerdown', () => {if (state === 'gate') play.classList.add('is-pressed');});
+  play.addEventListener('pointerdown', () => {
+    if (state !== 'gate') return;
+    play.classList.add('is-pressed');
+    // A mouse press already counts as a click for audio, so the press can be heard
+    unlockAudio();
+    if (ac && ac.state === 'running') pressSound(ac, out);
+  });
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) play.addEventListener(ev, () => play.classList.remove('is-pressed'));
   skip.addEventListener('click', e => {e.stopPropagation(); reveal(true);});
   overlay.addEventListener('click', () => {
