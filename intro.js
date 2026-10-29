@@ -81,6 +81,8 @@
   }
 
   // ---------- sound: a two-note sprite stinger, synthesized ----------
+  // The two notes (Hz) and the sparkle tail that answers them
+  const SCORE = {first: 659.26, second: 987.77, dust: [2217.46, 1975.53, 1661.22, 1479.98, 1318.51, 1975.53]}; // E5 → B5, E-major pentatonic
   const LEAD = .45; // seconds of air-swish before the first note
   function seeded(s) {return () => (s = (s * 16807) % 2147483647) / 2147483647;}
 
@@ -187,14 +189,12 @@
     noise.connect(bp).connect(ng).connect(bus(-.4));
     noise.start(t0 - LEAD);
 
-    const E5 = 659.26, B5 = 987.77;
-    bell(E5, t0, .6, -.28, 1.7);                  // "hel"
-    bell(E5 * 2, t0 + gap - .045, .09, .1, .35);  // grace flick before the answer
-    bell(B5, t0 + gap, .75, .3, 2.8);             // "lo,"
+    bell(SCORE.first, t0, .6, -.28, 1.7);                     // "hel"
+    bell(SCORE.first * 2, t0 + gap - .045, .09, .1, .35);     // grace flick before the answer
+    bell(SCORE.second, t0 + gap, .75, .3, 2.8);               // "lo,"
     // Fairy-dust tail: a few quiet pings drifting down
-    const dust = [2217.46, 1975.53, 1661.22, 1479.98, 1318.51, 1975.53]; // E-major pentatonic, falling
     let t = t0 + gap + .07;
-    dust.forEach((f, i) => {t += .045 + rand() * .09; bell(f, t, .05 * (1 - i / 8), rand() * 1.4 - .7, .5);});
+    SCORE.dust.forEach((f, i) => {t += .045 + rand() * .09; bell(f, t, .05 * (1 - i / 8), rand() * 1.4 - .7, .5);});
     return master;
   }
 
