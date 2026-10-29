@@ -60,9 +60,10 @@
   function buildStinger(ac, out, t0, gap) {
     // t0 = first note time, gap = seconds between the two notes
     const rand = seeded(11);
-    const master = ac.createGain(); master.gain.value = .55;
-    const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9500;
-    master.connect(tone).connect(out);
+    const master = ac.createGain(); master.gain.value = .62;
+    const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 6500;
+    const clean = ac.createBiquadFilter(); clean.type = 'highpass'; clean.frequency.value = 150;
+    master.connect(clean).connect(tone).connect(out);
 
     // Small airy room
     const len = Math.floor(ac.sampleRate * 2.6);
@@ -72,7 +73,7 @@
       for (let i = 0; i < len; i++) {const n = rand() * 2 - 1; d[i] = (n - prev * .6) * Math.pow(1 - i / len, 3.2); prev = n;}
     }
     const verb = ac.createConvolver(); verb.buffer = ir;
-    const wet = ac.createGain(); wet.gain.value = .32;
+    const wet = ac.createGain(); wet.gain.value = .36;
     verb.connect(wet).connect(master);
 
     // Stereo ping-pong echo for a little flutter
@@ -89,32 +90,34 @@
       return p;
     };
 
-    // Glassy FM bell: bright "ting" that mellows as the modulation index falls
+    // Rounded FM bell: a soft "ting" over a warm, slightly chorused body
     function bell(f, t, vel, pan, decay) {
       const dest = bus(pan);
-      const car = ac.createOscillator(), mod = ac.createOscillator(), modGain = ac.createGain(), amp = ac.createGain();
-      car.frequency.value = f; mod.frequency.value = f * 3.0;
-      modGain.gain.setValueAtTime(f * 2.4, t);
-      modGain.gain.exponentialRampToValueAtTime(f * .08, t + .28);
-      mod.connect(modGain).connect(car.frequency);
-      amp.gain.setValueAtTime(0, t);
-      amp.gain.linearRampToValueAtTime(vel, t + .006);
-      amp.gain.exponentialRampToValueAtTime(vel * .35, t + .12);
-      amp.gain.exponentialRampToValueAtTime(.0001, t + decay);
-      car.connect(amp).connect(dest);
-      // Inharmonic sparkle partial, very short
-      const sp = ac.createOscillator(), sg = ac.createGain();
-      sp.frequency.value = f * 4.2;
-      sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(vel * .18, t + .003);
-      sg.gain.exponentialRampToValueAtTime(.0001, t + .22);
-      sp.connect(sg).connect(dest);
-      // Soft fundamental body an octave down for warmth
-      const bo = ac.createOscillator(), bgn = ac.createGain();
-      bo.type = 'triangle'; bo.frequency.value = f / 2;
-      bgn.gain.setValueAtTime(0, t); bgn.gain.linearRampToValueAtTime(vel * .12, t + .01);
-      bgn.gain.exponentialRampToValueAtTime(.0001, t + decay * .6);
-      bo.connect(bgn).connect(dest);
-      for (const o of [car, mod, sp, bo]) {o.start(t); o.stop(t + decay + .05);}
+      const oscs = [];
+      const voice = (type, freq, level, attack, len, to = dest) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(level, t + attack);
+        g.gain.exponentialRampToValueAtTime(.0001, t + len);
+        o.connect(g).connect(to); oscs.push(o);
+        return o;
+      };
+      // FM layer: harmonic 2:1 ratio and a gentle index, so the attack glints without biting
+      const car = voice('sine', f, vel * .55, .008, decay);
+      const mod = ac.createOscillator(), modGain = ac.createGain();
+      mod.frequency.value = f * 2;
+      modGain.gain.setValueAtTime(f * 1.1, t);
+      modGain.gain.exponentialRampToValueAtTime(f * .03, t + .35);
+      mod.connect(modGain).connect(car.frequency); oscs.push(mod);
+      // Pure fundamental plus a hair-detuned twin for fullness
+      voice('sine', f * 1.0035, vel * .3, .012, decay * .9);
+      // Warm body an octave down
+      voice('sine', f / 2, vel * .26, .015, decay * .7);
+      // Octave shimmer and a faint glassy partial for the sprite sparkle
+      voice('sine', f * 2, vel * .1, .006, decay * .45);
+      voice('sine', f * 4.2, vel * .045, .004, .14);
+      for (const o of oscs) {o.start(t); o.stop(t + decay + .05);}
     }
 
     // Air swish rising into the first note — the sprite arriving
@@ -123,18 +126,18 @@
     for (let i = 0; i < nlen; i++) nd[i] = rand() * 2 - 1;
     const noise = ac.createBufferSource(); noise.buffer = nb;
     const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2;
-    bp.frequency.setValueAtTime(1800, t0 - LEAD); bp.frequency.exponentialRampToValueAtTime(9000, t0);
+    bp.frequency.setValueAtTime(900, t0 - LEAD); bp.frequency.exponentialRampToValueAtTime(5000, t0);
     const ng = ac.createGain();
-    ng.gain.setValueAtTime(0, t0 - LEAD); ng.gain.linearRampToValueAtTime(.05, t0 - .06); ng.gain.linearRampToValueAtTime(0, t0 + .02);
+    ng.gain.setValueAtTime(0, t0 - LEAD); ng.gain.linearRampToValueAtTime(.04, t0 - .06); ng.gain.linearRampToValueAtTime(0, t0 + .02);
     noise.connect(bp).connect(ng).connect(bus(-.4));
     noise.start(t0 - LEAD);
 
-    const E6 = 1318.51, B6 = 1975.53;
-    bell(E6, t0, .55, -.28, 1.5);                 // "hel"
-    bell(E6 * 2, t0 + gap - .045, .1, .1, .35);   // grace flick before the answer
-    bell(B6, t0 + gap, .7, .3, 2.6);              // "lo,"
+    const E5 = 659.26, B5 = 987.77;
+    bell(E5, t0, .6, -.28, 1.7);                  // "hel"
+    bell(E5 * 2, t0 + gap - .045, .09, .1, .35);  // grace flick before the answer
+    bell(B5, t0 + gap, .75, .3, 2.8);             // "lo,"
     // Fairy-dust tail: a few quiet pings drifting down
-    const dust = [4434.92, 3951.07, 3322.44, 2959.96, 2637.02, 3951.07]; // E-major pentatonic, falling
+    const dust = [2217.46, 1975.53, 1661.22, 1479.98, 1318.51, 1975.53]; // E-major pentatonic, falling
     let t = t0 + gap + .07;
     dust.forEach((f, i) => {t += .045 + rand() * .09; bell(f, t, .05 * (1 - i / 8), rand() * 1.4 - .7, .5);});
     return master;
