@@ -305,24 +305,25 @@
     }
   }
 
-  // The page floating up: a minimal UI swoosh. One soft breath of air that brightens
-  // slightly as it rises, kept short, quiet and dry. dur matches the reveal (ms).
+  // The page floating up: a minimal UI swoosh. One soft, low breath of air that
+  // opens slightly as it rises, kept short, quiet and dry. dur matches the reveal (ms).
   function whooshSound(ac, out, dur) {
     const t = ac.currentTime + .01 + dur / 1000 * .3; // lands with the hero's lift
     const len = .5;
     const bus = ac.createGain(); bus.gain.value = 1; bus.connect(out);
     for (const [side, seed] of [[-1, 41], [1, 73]]) {
       const src = ac.createBufferSource(); src.buffer = noiseBuffer(ac, .9, seed);
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .7;
-      bp.frequency.setValueAtTime(900, t);
-      bp.frequency.exponentialRampToValueAtTime(2600, t + len);
-      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .8;
+      bp.frequency.setValueAtTime(300, t);
+      bp.frequency.exponentialRampToValueAtTime(820, t + len);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 80;
       const g = ac.createGain(), pan = ac.createStereoPanner();
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(.15, t + .16);
+      g.gain.linearRampToValueAtTime(.34, t + .16);
       g.gain.setTargetAtTime(0, t + .18, .09);
       pan.pan.value = side * .3;
-      src.connect(bp).connect(lp).connect(g).connect(pan).connect(bus);
+      src.connect(hp).connect(bp).connect(lp).connect(g).connect(pan).connect(bus);
       src.start(t); src.stop(t + .85);
     }
   }
