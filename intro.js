@@ -305,79 +305,26 @@
     }
   }
 
-  // The page floating up: a rising whoosh timed to the hero's lift.
-  // Two decorrelated air layers sweep upward and widen from the centre; each runs
-  // through a flanger whose delay shortens, so its comb notches rise with it (a soft
-  // jet texture). A breathy whistle and some low body add weight, and a faint B6
-  // shimmer lands as the page settles. dur matches the reveal animation (ms).
+  // The page floating up: a minimal UI swoosh. One soft breath of air that brightens
+  // slightly as it rises, kept short, quiet and dry. dur matches the reveal (ms).
   function whooshSound(ac, out, dur) {
-    const D = dur / 1000, t = ac.currentTime + .01;
-    const peak = t + D * .55, end = t + D * 1.55, len = end - t;
-    const clean = ac.createBiquadFilter(); clean.type = 'highpass'; clean.frequency.value = 90; clean.connect(out);
-    const {bus, verb} = uiBus(ac, clean, 1.2);
-    // Swell: eases in to the peak, then falls away smoothly
-    const swell = (level, at = .55) => {
-      const n = 256, c = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        const u = i / (n - 1), p = at / 1.55;
-        c[i] = level * (u < p ? Math.pow(Math.sin(Math.PI / 2 * u / p), 2.2) : Math.pow(1 - (u - p) / (1 - p), 2.6));
-      }
-      return c;
-    };
-    const layer = (seed, setup) => {
-      const src = ac.createBufferSource(); src.buffer = noiseBuffer(ac, len + .05, seed);
-      const g = ac.createGain(); g.gain.value = 0;
-      setup(src, g);
-      src.start(t); src.stop(end + .05);
-      return g;
-    };
-
-    // 1. Air: left and right layers rising and spreading outward
+    const t = ac.currentTime + .01 + dur / 1000 * .3; // lands with the hero's lift
+    const len = .5;
+    const bus = ac.createGain(); bus.gain.value = 1; bus.connect(out);
     for (const [side, seed] of [[-1, 41], [1, 73]]) {
-      layer(seed, (src, g) => {
-        const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .9;
-        bp.frequency.setValueAtTime(320, t);
-        bp.frequency.exponentialRampToValueAtTime(4200, peak);
-        bp.frequency.exponentialRampToValueAtTime(7000, end);
-        // Flanger: dry + a copy with a shrinking delay
-        const fl = ac.createDelay(.02), flMix = ac.createGain(); flMix.gain.value = .75;
-        fl.delayTime.setValueAtTime(.0075 + side * .0006, t);
-        fl.delayTime.exponentialRampToValueAtTime(.0009, peak);
-        fl.delayTime.linearRampToValueAtTime(.0005, end);
-        const pan = ac.createStereoPanner();
-        pan.pan.setValueAtTime(side * .12, t);
-        pan.pan.linearRampToValueAtTime(side * .8, end);
-        src.connect(bp); bp.connect(g); bp.connect(fl).connect(flMix).connect(g);
-        g.gain.setValueCurveAtTime(swell(.15), t, len);
-        g.connect(pan); pan.connect(bus); pan.connect(verb);
-      });
+      const src = ac.createBufferSource(); src.buffer = noiseBuffer(ac, .9, seed);
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .7;
+      bp.frequency.setValueAtTime(900, t);
+      bp.frequency.exponentialRampToValueAtTime(2600, t + len);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+      const g = ac.createGain(), pan = ac.createStereoPanner();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(.15, t + .16);
+      g.gain.setTargetAtTime(0, t + .18, .09);
+      pan.pan.value = side * .3;
+      src.connect(bp).connect(lp).connect(g).connect(pan).connect(bus);
+      src.start(t); src.stop(t + .85);
     }
-
-    // 2. A breathy whistle riding the sweep: a narrow resonance that glides up
-    layer(97, (src, g) => {
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9;
-      bp.frequency.setValueAtTime(620, t);
-      bp.frequency.exponentialRampToValueAtTime(2500, peak);
-      bp.frequency.exponentialRampToValueAtTime(3300, end);
-      src.connect(bp).connect(g);
-      g.gain.setValueCurveAtTime(swell(.22, .6), t, len);
-      g.connect(bus); g.connect(verb);
-    });
-
-    // 3. Low body: the weight of the page lifting, arriving a little earlier
-    layer(13, (src, g) => {
-      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = .6;
-      lp.frequency.setValueAtTime(140, t);
-      lp.frequency.exponentialRampToValueAtTime(700, peak);
-      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 120;
-      src.connect(lp).connect(hp).connect(g);
-      g.gain.setValueCurveAtTime(swell(.2, .45), t, len);
-      g.connect(bus);
-    });
-
-    // 4. Landing: a faint B6 shimmer and its octave as the page settles
-    blip(ac, [bus, verb], t + D * .95, 1975.53, 1975.53, .022, .9, .05, .2);
-    blip(ac, verb, t + D * 1.0, 3951.07, 3951.07, .009, .6, .04, -.25);
   }
 
   // Render the stinger offline once so the drawn waveform is the real one
