@@ -23,7 +23,9 @@
 
   // ---------- DOM ----------
   const el = (tag, cls, html) => {const n = document.createElement(tag); if (cls) n.className = cls; if (html) n.innerHTML = html; return n;};
+  const ZH = /^zh/i.test(root.lang);
   const overlay = el('div', 'hello is-gate');
+  overlay.setAttribute('aria-label', ZH ? '你好～我是李颜' : 'Hi～ I’m Carol Yan Li');
   const bg = el('div', 'hello-bg');
   const canvas = el('canvas');
   canvas.setAttribute('aria-hidden', 'true');
@@ -40,7 +42,7 @@
     tildePath.setAttribute('d', d);
   }
   drawTilde();
-  const sub = el('p', 'hello-sub', '<span lang="zh-CN">你好，我是李颜</span>I’m Carol. I make sound for stories.');
+  const sub = el('p', 'hello-sub', ZH ? '<span>你好，我是李颜</span>为故事创作声音' : '<span>I’m Carol.</span>I make sound for stories.');
   const playhead = el('div', 'hello-playhead');
   const timecode = el('div', 'hello-timecode', '00:00:00:00');
   timecode.setAttribute('aria-hidden', 'true');
@@ -50,8 +52,8 @@
     `<stop offset="0" stop-color="#a07393"/><stop offset=".45" stop-color="#76486b"/><stop offset="1" stop-color="#5a3250"/></linearGradient></defs>` +
     `<path class="hello-echo" d="${TRI}"/><g class="hello-key"><path class="hello-tri" d="${TRI}"/></g></svg>`);
   play.type = 'button';
-  play.setAttribute('aria-label', 'Play intro with sound / 播放有声开场');
-  const skip = el('button', 'hello-skip', 'Skip intro<span lang="zh-CN">跳过</span>');
+  play.setAttribute('aria-label', ZH ? '播放有声开场' : 'Play intro with sound');
+  const skip = el('button', 'hello-skip', ZH ? '跳过开场' : 'Skip intro');
   skip.type = 'button';
   const line = el('div', 'hello-line');
   const dot = el('div', 'hello-dot');

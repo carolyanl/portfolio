@@ -135,3 +135,40 @@ footer.shell .preview-label{display:none}
 .gear{max-width:950px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.gear summary{cursor:pointer;list-style:none;color:var(--accent);font-size:14px;padding:12px 0;min-height:44px}.gear summary::-webkit-details-marker{display:none}.gear summary::before{content:"⌄";display:inline-block;font-size:16px;margin-right:9px}.gear[open] summary::before{transform:rotate(180deg)}.gear summary span{font-size:12px;margin-left:8px;color:var(--muted)}.gear summary:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.gear .equipment-list{padding-bottom:10px}
 @media(max-width:700px){.bio-experience,.bio-skills{padding-bottom:46px}.bio-experience h2,.bio-skills h2{font-size:46px}.exp-list li{grid-template-columns:1fr;gap:2px;padding:14px 0}.exp-years{font-size:17px}.exp-org{font-size:22px}.exp-role{font-size:13px}.skill-list>div{grid-template-columns:1fr;gap:4px;padding:12px 0}.skill-list dd{font-size:14px}}
 .press-links a>span>span.translation{font:400 12px/1.6 Arial,"PingFang SC",sans-serif;color:var(--muted);margin-top:2px}
+
+/* Language switch in the header. */
+nav a.lang-switch{min-height:30px;padding:0 10px;margin-left:6px;border:1px solid var(--line);font-size:12px;letter-spacing:.08em;color:var(--muted);flex-direction:row;align-self:center;line-height:28px}nav a.lang-switch:hover{color:var(--accent);border-color:var(--accent)}
+.exp-place{font:400 12px/1.6 Arial,"PingFang SC",sans-serif;color:var(--muted);margin-left:12px;letter-spacing:.02em}
+.ach-year{display:inline-block;min-width:52px;font:italic 19px/1.6 var(--serif);color:var(--accent);font-variant-numeric:tabular-nums}
+@media(max-width:700px){header nav a[href="index.html"]{display:none}nav a.lang-switch{margin-left:0;padding:0 8px}}
+
+/* Chinese pages: Songti headings, upright emphasis, no tight English tracking, roomier lines. */
+html:lang(zh){--serif:'Cormorant Garamond',"Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC","SimSun",serif}
+html:lang(zh) body{font-family:Arial,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;line-height:1.8;line-break:strict}
+html:lang(zh) h1,html:lang(zh) h2,html:lang(zh) h3{letter-spacing:.02em;font-weight:400;line-height:1.3}
+html:lang(zh) em,html:lang(zh) i{font-style:normal}
+html:lang(zh) header nav{font-size:14px;letter-spacing:.06em}
+html:lang(zh) .eyebrow,html:lang(zh) .portfolio-caption{letter-spacing:.2em;font-size:12px}
+html:lang(zh) h1 [lang="en"]{font:italic 400 28px/1 var(--serif);letter-spacing:0;margin-left:24px}
+html:lang(zh) .hero h1,html:lang(zh) .home-page h1{font-size:clamp(64px,7vw,104px);letter-spacing:.06em}
+html:lang(zh) .home-page .intro{font-size:18px;letter-spacing:.04em;line-height:1.9}
+html:lang(zh) .section-heading h2,html:lang(zh) .bio-achievements h2,html:lang(zh) .bio-experience h2,html:lang(zh) .bio-skills h2{font-size:42px;letter-spacing:.08em}
+html:lang(zh) .home-page .service-grid h3{font-size:26px;letter-spacing:.06em;margin-bottom:14px}
+html:lang(zh) .service-tags{font-size:13px;letter-spacing:.08em;color:var(--muted)}
+html:lang(zh) .bio-title h1{font-size:clamp(52px,5.4vw,78px)}
+html:lang(zh) .bio-copy h2{font-size:34px;letter-spacing:.08em}
+html:lang(zh) .bio-copy p{font-size:16px;line-height:2.05;text-align:justify;letter-spacing:.02em}
+html:lang(zh) .exp-org{font-size:21px;letter-spacing:.04em}
+html:lang(zh) .exp-role,html:lang(zh) .skill-list dd,html:lang(zh) .achievement-list li{letter-spacing:.02em}
+html:lang(zh) .skill-list dt{font-size:14px;letter-spacing:.04em}
+html:lang(zh) .press-links a span:nth-child(2){font-size:14px;letter-spacing:.02em}
+html:lang(zh) .work-intro h1,html:lang(zh) .portfolio-main h1{font-size:clamp(52px,5.6vw,80px);letter-spacing:.08em}
+html:lang(zh) .work-intro .featured h2{font-size:26px;letter-spacing:.04em}
+html:lang(zh) .work h3{font-size:26px;letter-spacing:.04em}
+html:lang(zh) .project-heading h3{font-size:23px;letter-spacing:.04em}
+html:lang(zh) .project-kind,html:lang(zh) .project-details p{letter-spacing:.04em}
+html:lang(zh) .contact-main h1{font-size:clamp(40px,4.6vw,64px);line-height:1.35;letter-spacing:.06em}
+html:lang(zh) .contact-lead{letter-spacing:.06em}
+@media(max-width:700px){html:lang(zh) header nav{font-size:13px;letter-spacing:.02em}html:lang(zh) .hero h1,html:lang(zh) .home-page h1{font-size:60px}html:lang(zh) h1 [lang="en"]{font-size:20px;margin-left:14px}html:lang(zh) .section-heading h2,html:lang(zh) .bio-achievements h2,html:lang(zh) .bio-experience h2,html:lang(zh) .bio-skills h2{font-size:34px}html:lang(zh) .bio-title h1{font-size:44px}html:lang(zh) .bio-copy h2{font-size:28px}html:lang(zh) .work-intro h1,html:lang(zh) .portfolio-main h1{font-size:44px}html:lang(zh) .contact-main h1{font-size:34px}html:lang(zh) .project-heading h3{font-size:21px}html:lang(zh) .exp-org{font-size:19px}html:lang(zh) .bio-copy p{text-align:left}}
+.achievement-list li>.ach-year{font-size:19px;color:var(--accent)}
+html:lang(zh) .home-page .intro{max-width:none}
